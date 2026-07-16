@@ -1,0 +1,23 @@
+This is a list reference of what weapons go with what job class.
+-
+
+---------------------------------------------------------------
+|Arcobat - Yoyo    |Cleric - Mace      |Warden - Blade        |
+|Archer - Bow      |Soldier - Rifle    |Bard - Instrument     |
+|Assist - Stick    |Dancer - Fan       |Brawler - Claw        |
+|Barbarian - Hammer|Reaper - Sythe     |Berserker - Chainsaw  |
+|Fighter - Knuckle |Rogue - Whip       |Ringmaster - Chakram  |
+|Hunter - Gun      |Ranger - Crossbow  |Mediator - Scroll     |
+|Knight - 2H Sword |Crusader - 2H Axe  |Druid - Sigil         |
+|Lancer - Spear    |Paladin - Shield   |Shaman - Lantern      |
+|Mage - Stave      |Sentinel - Heavygun|Poacher - Shotgun     |
+|Sage - Ball       |Elementor - Book   |Monk - Nunchaku       |
+|Samurai - Katana  |Assassin - Dual    |Jester - Sickle       |
+|Squire - 1H Sword |Mercenary - 1H Axe |Templar - Flail       |
+|Thief - Dagger    |Fencer - Rapier    |Dragoon - Javelin     |
+|Witch - Broom     |Valkyn - Wing      |Pathfinder - Boomerang|
+|Wizard - Wand     |Psychic - Mask     |Apothecary - Pouch    |
+---------------------------------------------------------------
+
+For more information on each job class:
+https://animatedbattlers.wordpress.com/faq-and-information/how-many-actor-job-classes-are-there/

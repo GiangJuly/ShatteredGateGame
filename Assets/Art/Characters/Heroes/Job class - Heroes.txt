@@ -1,0 +1,57 @@
+This is a list reference of what job classes are which heroes.
+-
+
+Acrobat/Cleric/Warden
+- 
+
+Archer/Soldier/Bard
+- 
+
+Assist/Dancer/Brawler
+- Mira 1
+
+Barbarian/Reaper/Berserker
+- 
+
+Fighter/Rogue/Ringmaster
+- 
+
+Hunter/Ranger/Mediator
+- Vandice 1
+- Violet 1
+
+Knight/Crusader/Druid
+- Graham 1
+- Therese 1
+
+Lancer/Paladin/Shaman
+- Rose 1
+- Rose 2
+
+Mage/Sentinel/Poacher
+- 
+
+Sage/Elementor/Monk
+- Lucius 1
+
+Samurai/Assassin/Jester
+- Kamura 1
+- Kamura 2
+
+Squire/Mercenary/Templar
+- James 1 
+- Kai 1
+- Ulric 1
+
+Thief/Fencer/Dragoon
+- 
+
+Witch/Valkyn/Pathfinder
+- 
+
+Wizard/Psychic/Apothecary
+- Sally 1
+- Sally 2
+
+For more information on each job class:
+https://animatedbattlers.wordpress.com/faq-and-information/how-many-actor-job-classes-are-there/
