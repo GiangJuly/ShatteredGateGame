@@ -128,3 +128,13 @@ MonoBehaviour:
   attackPower: 7
   speed: 6
   isPlayerUnit: 0
+  maxAP: 3
+  skills:
+  - skillName: Strike
+    apCost: 0
+    powerMultiplier: 1
+    appliesTag: 0
+    tagDuration: 2
+    consumesTag: 0
+    comboMultiplier: 1.75
+  battlegroundIndex: 1

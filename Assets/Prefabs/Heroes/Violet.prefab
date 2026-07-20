@@ -128,3 +128,20 @@ MonoBehaviour:
   attackPower: 10
   speed: 10
   isPlayerUnit: 1
+  maxAP: 3
+  skills:
+  - skillName: Strike
+    apCost: 0
+    powerMultiplier: 1
+    appliesTag: 0
+    tagDuration: 2
+    consumesTag: 0
+    comboMultiplier: 1.75
+  - skillName: Pin Down
+    apCost: 2
+    powerMultiplier: 0.6
+    appliesTag: 2
+    tagDuration: 1
+    consumesTag: 0
+    comboMultiplier: 1.75
+  battlegroundIndex: 0

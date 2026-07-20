@@ -128,3 +128,20 @@ MonoBehaviour:
   attackPower: 12
   speed: 9
   isPlayerUnit: 1
+  maxAP: 3
+  skills:
+  - skillName: Strike
+    apCost: 0
+    powerMultiplier: 1
+    appliesTag: 0
+    tagDuration: 2
+    consumesTag: 0
+    comboMultiplier: 1.75
+  - skillName: Arcane Burst
+    apCost: 2
+    powerMultiplier: 1
+    appliesTag: 0
+    tagDuration: 2
+    consumesTag: 1
+    comboMultiplier: 1.75
+  battlegroundIndex: 0

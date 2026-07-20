@@ -128,3 +128,20 @@ MonoBehaviour:
   attackPower: 8
   speed: 6
   isPlayerUnit: 1
+  maxAP: 3
+  skills:
+  - skillName: Strike
+    apCost: 0
+    powerMultiplier: 1
+    appliesTag: 0
+    tagDuration: 2
+    consumesTag: 0
+    comboMultiplier: 1.75
+  - skillName: Guard Break
+    apCost: 2
+    powerMultiplier: 0.6
+    appliesTag: 1
+    tagDuration: 2
+    consumesTag: 0
+    comboMultiplier: 1.75
+  battlegroundIndex: 0
