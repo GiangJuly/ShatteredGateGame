@@ -124,8 +124,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   unitName: Zombie
-  maxHP: 25
-  attackPower: 7
+  maxHP: 34
+  attackPower: 8
   speed: 6
   isPlayerUnit: 0
   maxAP: 3
@@ -137,4 +137,10 @@ MonoBehaviour:
     tagDuration: 2
     consumesTag: 0
     comboMultiplier: 1.75
-  battlegroundIndex: 1
+    isComboStrike: 0
+  battlegroundIndex: 0
+  displayScale: 1
+  hasComboHealPassive: 0
+  hasArcaneChargePassive: 0
+  hasMarkedPreyPassive: 0
+  hasContractorDiscountPassive: 0

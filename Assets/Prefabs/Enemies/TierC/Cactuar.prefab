@@ -124,8 +124,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   unitName: Cactuar
-  maxHP: 30
-  attackPower: 9
+  maxHP: 42
+  attackPower: 10
   speed: 8
   isPlayerUnit: 0
   maxAP: 3
@@ -137,4 +137,10 @@ MonoBehaviour:
     tagDuration: 2
     consumesTag: 0
     comboMultiplier: 1.75
-  battlegroundIndex: 2
+    isComboStrike: 0
+  battlegroundIndex: 4
+  displayScale: 1.25
+  hasComboHealPassive: 0
+  hasArcaneChargePassive: 0
+  hasMarkedPreyPassive: 0
+  hasContractorDiscountPassive: 0

@@ -137,6 +137,7 @@ MonoBehaviour:
     tagDuration: 2
     consumesTag: 0
     comboMultiplier: 1.75
+    isComboStrike: 0
   - skillName: Arcane Burst
     apCost: 2
     powerMultiplier: 1
@@ -144,4 +145,10 @@ MonoBehaviour:
     tagDuration: 2
     consumesTag: 1
     comboMultiplier: 1.75
+    isComboStrike: 0
   battlegroundIndex: 0
+  displayScale: 1
+  hasComboHealPassive: 0
+  hasArcaneChargePassive: 1
+  hasMarkedPreyPassive: 0
+  hasContractorDiscountPassive: 0

@@ -124,8 +124,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   unitName: Bat
-  maxHP: 15
-  attackPower: 4
+  maxHP: 22
+  attackPower: 5
   speed: 5
   isPlayerUnit: 0
   maxAP: 3
@@ -137,4 +137,10 @@ MonoBehaviour:
     tagDuration: 2
     consumesTag: 0
     comboMultiplier: 1.75
-  battlegroundIndex: 0
+    isComboStrike: 0
+  battlegroundIndex: 1
+  displayScale: 1.7
+  hasComboHealPassive: 0
+  hasArcaneChargePassive: 0
+  hasMarkedPreyPassive: 0
+  hasContractorDiscountPassive: 0

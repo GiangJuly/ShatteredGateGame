@@ -4,23 +4,24 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-/// Combat turn-based: 1 kẻ địch / node, thứ tự lượt theo Speed. Mỗi lượt người chơi
-/// chọn 1 trong các Skill của unit hiện tại (giới hạn bởi AP); Skill có thể gắn Tag
-/// (Vulnerable/Stunned) lên mục tiêu hoặc ăn theo Tag đã có để gây combo dmg bồi.
-/// Địch tự chọn skill (ưu tiên skill đặc biệt khi đủ AP) và mục tiêu.
+/// Combat turn-based: 1-3 kẻ địch / node (chọn Elite/quái nhỏ theo bầy tăng độ khó), thứ tự lượt
+/// theo Speed. Mỗi lượt người chơi chọn 1 trong các Skill của unit hiện tại (giới hạn bởi AP);
+/// Skill có thể gắn Tag (Vulnerable/Stunned) lên mục tiêu hoặc ăn theo Tag đã có để gây combo dmg
+/// bồi. Người chơi có thể click vào HUD 1 Enemy để chọn mục tiêu cho đòn tiếp theo (mặc định nhắm
+/// địch còn sống đầu tiên nếu chưa chọn). Địch tự chọn skill (ưu tiên skill đặc biệt khi đủ AP) và
+/// mục tiêu trong party.
 public class CombatManager : MonoBehaviour
 {
-    [Header("Spawn points (world space)")]
+    [Header("Spawn points (world space, tối đa 3 Enemy)")]
     public Transform[] partySpawnPoints;
-    public Transform enemySpawnPoint;
-    public float unitScale = 2f;
+    public Transform[] enemySpawnPoints;
+    public float unitScale = 2.6f;
 
-    [Header("Background (world space, theo tier quái)")]
+    [Header("Background (world space, theo Enemy đầu tiên trong nhóm)")]
     public SpriteRenderer backgroundRenderer;
     public Sprite[] battlegroundSprites;
 
     [Header("UI")]
-    public Text turnOrderText;
     public Text logText;
     public Text apText;
     public Button[] skillButtons;
@@ -31,11 +32,12 @@ public class CombatManager : MonoBehaviour
     public Image[] partyPortrait;
     public Text[] partyTagText;
 
-    [Header("HP Bar (enemy)")]
-    public Text enemyNameText;
-    public Image enemyHpFill;
-    public Image enemyPortrait;
-    public Text enemyTagText;
+    [Header("HP Bars (tối đa 3 Enemy slot)")]
+    public Text[] enemyNameText;
+    public Image[] enemyHpFill;
+    public Image[] enemyPortrait;
+    public Text[] enemyTagText;
+    public Button[] enemyTargetButtons; // click để chọn mục tiêu cho đòn tiếp theo của người chơi
 
     [System.Serializable]
     public class NamedSprite { public string unitName; public Sprite sprite; }
@@ -49,6 +51,21 @@ public class CombatManager : MonoBehaviour
             if (p.unitName == unitName) return p.sprite;
         return null;
     }
+
+    // Hero dùng tông ấm (vàng/cam), Enemy dùng tông lạnh (xanh/lục) — để 2 phe luôn phân biệt được
+    // bằng mắt bất kể dùng skill nào. Việc gắn Tag (Vulnerable/Stunned) có hiệu ứng riêng, ưu tiên
+    // thấp hơn đòn to/combo/kết liễu (xem ChooseFxFrames).
+    [Header("Hit VFX — Hero (tông ấm)")]
+    public Sprite[] hitFxFrames;        // đòn thường
+    public Sprite[] bigHitFxFrames;     // combo/streak/đòn kết liễu
+    public Sprite[] vulnerableApplyFx;  // gắn Vulnerable (Shadow Slash)
+    public Sprite[] stunApplyFx;        // gắn Stunned (Pin Down) — dùng chung cho cả 2 phe, sét luôn là ngôn ngữ "choáng"
+    public Sprite[] ultimateFxFrames;   // riêng Shattered Gate
+
+    [Header("Hit VFX — Enemy (tông lạnh)")]
+    public Sprite[] enemyHitFxFrames;       // đòn thường
+    public Sprite[] enemyBigHitFxFrames;    // đòn to/kết liễu
+    public Sprite[] enemyVulnerableApplyFx; // gắn Vulnerable (Crushing Blow)
 
     [Header("Optional")]
     public CameraShake cameraShake;
@@ -66,11 +83,25 @@ public class CombatManager : MonoBehaviour
         public int currentAP;
         public TagType tag;
         public int tagTurns;
+        public int comboStrikeStreak;
+        public int totalHitsLanded;
+        public int maxHPOverride; // >0: dùng thay stats.maxHP (Elite được bơm máu cao hơn prefab gốc)
+        public float atkMultiplier = 1f;
+        public int actionCount;          // tổng số lượt unit này đã ra tay — dùng cho AI Zero luân phiên skill
+        public int lastAnnouncedPhase;   // Zero: phase đã bark log gần nhất, tránh bark lặp lại
+        public int arcaneCharge;         // Passive Sally — Arcane Charge
+        public int nextSkillApDiscount;  // Passive James — Contractor's Discount, tiêu thụ ở đòn kế tiếp
         public bool IsDead => currentHP <= 0;
     }
 
+    const float EliteHpMultiplier = 1.4f;
+    const float EliteAtkMultiplier = 1.25f;
+
+    static int MaxHPOf(Unit u) => u.maxHPOverride > 0 ? u.maxHPOverride : u.stats.maxHP;
+
     readonly List<Unit> party = new List<Unit>();
-    Unit enemy;
+    readonly List<Unit> enemies = new List<Unit>();
+    int targetEnemyIndex; // slot trong `enemies` mà đòn kế tiếp của người chơi sẽ nhắm tới
     List<Unit> turnQueue = new List<Unit>();
     int turnIndex;
     bool waitingForPlayerInput;
@@ -80,21 +111,30 @@ public class CombatManager : MonoBehaviour
 
     static readonly Skill BasicStrike = new Skill { skillName = "Strike", apCost = 0, powerMultiplier = 1f };
 
-    public void StartCombat(GameObject[] partyPrefabs, GameObject enemyPrefab, System.Action<bool> onEnd)
+    // backgroundIndexOverride: -1 = dùng battlegroundIndex mặc định của Enemy đầu tiên trong nhóm;
+    // >=0 = ép dùng chỉ số này — cần khi 1 Gate dùng lại đúng Prefab của Gate khác trong cùng chặng
+    // (VD Elite dùng lại quái Monster) để 2 trận không hiện trùng y hệt 1 nền.
+    public void StartCombat(GameObject[] partyPrefabs, GameObject[] enemyPrefabs, System.Action<bool> onEnd,
+        bool isElite = false, int backgroundIndexOverride = -1)
     {
         onCombatEnd = onEnd;
         ClearPrevious();
         hasEnded = false;
+        targetEnemyIndex = 0;
 
         for (int i = 0; i < partyPrefabs.Length && i < partySpawnPoints.Length; i++)
         {
             var go = Instantiate(partyPrefabs[i], partySpawnPoints[i].position, Quaternion.identity);
-            go.transform.localScale *= unitScale;
+            var partyStats = go.GetComponent<UnitStatsHolder>();
+            go.transform.localScale *= unitScale * partyStats.displayScale;
+            var partySprite = go.GetComponent<SpriteRenderer>();
+            if (partySprite != null) partySprite.flipX = true; // quay mặt sang phải, đối diện Enemy
+            go.AddComponent<CombatBob>();
             var u = new Unit
             {
                 go = go,
                 animator = go.GetComponent<Animator>(),
-                stats = go.GetComponent<UnitStatsHolder>()
+                stats = partyStats
             };
             ResetToIdle(u.animator);
             u.currentHP = u.stats.maxHP;
@@ -110,39 +150,85 @@ public class CombatManager : MonoBehaviour
         for (int i = party.Count; i < partyPortrait.Length; i++)
             partyPortrait[i].enabled = false;
 
-        SetBackgroundForEnemy(enemyPrefab);
+        SetBackgroundForEnemyGroup(enemyPrefabs, backgroundIndexOverride);
 
-        var eGo = Instantiate(enemyPrefab, enemySpawnPoint.position, Quaternion.identity);
-        eGo.transform.localScale *= unitScale;
-        enemy = new Unit
+        for (int i = 0; i < enemyPrefabs.Length && i < enemySpawnPoints.Length; i++)
         {
-            go = eGo,
-            animator = eGo.GetComponent<Animator>(),
-            stats = eGo.GetComponent<UnitStatsHolder>()
-        };
-        ResetToIdle(enemy.animator);
-        enemy.currentHP = enemy.stats.maxHP;
-        var enemySprite = FindPortrait(enemy.stats.unitName);
-        enemyPortrait.sprite = enemySprite;
-        enemyPortrait.enabled = enemySprite != null;
+            var eGo = Instantiate(enemyPrefabs[i], enemySpawnPoints[i].position, Quaternion.identity);
+            var eStats = eGo.GetComponent<UnitStatsHolder>();
+            eGo.transform.localScale *= unitScale * eStats.displayScale;
+            eGo.AddComponent<CombatBob>();
+            var eu = new Unit
+            {
+                go = eGo,
+                animator = eGo.GetComponent<Animator>(),
+                stats = eStats
+            };
+            ResetToIdle(eu.animator);
+            var enemySprite = FindPortrait(eu.stats.unitName); // tra icon TRƯỚC khi đổi tên hiển thị Elite
+            if (isElite)
+            {
+                eu.maxHPOverride = Mathf.RoundToInt(eu.stats.maxHP * EliteHpMultiplier);
+                eu.atkMultiplier = EliteAtkMultiplier;
+                eu.stats.unitName += " (Elite)"; // an toàn: Instantiate đã tách bản sao component riêng, không đụng prefab gốc
+            }
+            eu.currentHP = MaxHPOf(eu);
+            enemies.Add(eu);
 
-        turnQueue = party.Concat(new[] { enemy }).OrderByDescending(u => u.stats.speed).ToList();
+            if (i < enemyPortrait.Length)
+            {
+                enemyPortrait[i].sprite = enemySprite;
+                enemyPortrait[i].enabled = enemySprite != null;
+            }
+        }
+
+        turnQueue = party.Concat(enemies).OrderByDescending(u => u.stats.speed).ToList();
         turnIndex = 0;
 
+        WireEnemyTargetButtons();
         HideSkillButtons();
 
         UpdateStatusUI();
         StartCoroutine(RunTurns());
     }
 
-    // Đổi background combat theo tier của enemy (battlegroundIndex đọc thẳng từ prefab, không cần instantiate trước).
-    // Background là SpriteRenderer world-space (không phải UI) để nằm đúng lớp giữa nhân vật và Tilemap nền,
-    // vì Canvas Screen Space Overlay luôn vẽ đè lên toàn bộ world dù đặt thứ tự thế nào trong Hierarchy.
-    void SetBackgroundForEnemy(GameObject enemyPrefab)
+    void WireEnemyTargetButtons()
+    {
+        if (enemyTargetButtons == null) return;
+        for (int i = 0; i < enemyTargetButtons.Length; i++)
+        {
+            if (enemyTargetButtons[i] == null) continue;
+            int captured = i;
+            enemyTargetButtons[i].onClick.RemoveAllListeners();
+            enemyTargetButtons[i].onClick.AddListener(() =>
+            {
+                if (captured < enemies.Count && !enemies[captured].IsDead) targetEnemyIndex = captured;
+            });
+        }
+    }
+
+    // Đổi background combat theo Enemy ĐẦU TIÊN trong nhóm (battlegroundIndex đọc thẳng từ prefab,
+    // không cần instantiate trước), trừ khi Gate ép 1 chỉ số riêng (backgroundIndexOverride >= 0).
+    // Background là SpriteRenderer world-space (không phải UI) để nằm đúng lớp giữa nhân vật và
+    // Tilemap nền, vì Canvas Screen Space Overlay luôn vẽ đè lên toàn bộ world dù đặt thứ tự thế
+    // nào trong Hierarchy.
+    void SetBackgroundForEnemyGroup(GameObject[] enemyPrefabs, int backgroundIndexOverride)
     {
         if (backgroundRenderer == null || battlegroundSprites == null || battlegroundSprites.Length == 0) return;
-        var stats = enemyPrefab.GetComponent<UnitStatsHolder>();
-        int idx = stats != null ? Mathf.Clamp(stats.battlegroundIndex, 0, battlegroundSprites.Length - 1) : 0;
+        if (enemyPrefabs == null || enemyPrefabs.Length == 0) return;
+
+        int idx;
+        if (backgroundIndexOverride >= 0)
+        {
+            idx = backgroundIndexOverride;
+        }
+        else
+        {
+            var stats = enemyPrefabs[0].GetComponent<UnitStatsHolder>();
+            idx = stats != null ? stats.battlegroundIndex : 0;
+        }
+        idx = Mathf.Clamp(idx, 0, battlegroundSprites.Length - 1);
+
         var sprite = battlegroundSprites[idx];
         if (sprite == null) return;
         backgroundRenderer.sprite = sprite;
@@ -172,8 +258,8 @@ public class CombatManager : MonoBehaviour
         StopAllCoroutines();
         foreach (var u in party) if (u.go != null) Destroy(u.go);
         party.Clear();
-        if (enemy != null && enemy.go != null) Destroy(enemy.go);
-        enemy = null;
+        foreach (var u in enemies) if (u.go != null) Destroy(u.go);
+        enemies.Clear();
         turnQueue.Clear();
     }
 
@@ -190,12 +276,10 @@ public class CombatManager : MonoBehaviour
         while (!CheckEnd())
         {
             var current = turnQueue[turnIndex % turnQueue.Count];
-            int thisIndex = turnIndex;
             turnIndex++;
 
             if (current.IsDead) continue;
 
-            UpdateTurnOrderUI(thisIndex);
             current.currentAP = Mathf.Min(current.stats.maxAP, current.currentAP + 1);
 
             if (current.tag == TagType.Stunned)
@@ -210,14 +294,18 @@ public class CombatManager : MonoBehaviour
 
             if (party.Contains(current))
             {
+                var target = SelectedEnemyOrFirstAlive();
+                if (target == null) continue; // toàn bộ Enemy đã gục — CheckEnd() sẽ kết thúc trận ở vòng lặp kế
+
                 UpdateSkillButtons(current);
-                logText.text = $"{current.stats.unitName}'s turn — choose a skill!";
                 waitingForPlayerInput = true;
                 chosenSkill = null;
                 while (waitingForPlayerInput) yield return null;
                 HideSkillButtons();
-                if (enemy.IsDead) continue;
-                yield return StartCoroutine(DoSkill(current, enemy, chosenSkill));
+
+                target = SelectedEnemyOrFirstAlive();
+                if (target == null) continue;
+                yield return StartCoroutine(DoSkill(current, target, chosenSkill));
             }
             else
             {
@@ -237,12 +325,63 @@ public class CombatManager : MonoBehaviour
         }
     }
 
+    // Mục tiêu người chơi đã click chọn (nếu còn sống); nếu chưa chọn/đã chết thì tự nhắm Enemy
+    // còn sống đầu tiên trong danh sách — luôn có 1 mục tiêu hợp lệ để bấm Skill mà không cần thao
+    // tác thêm, click vào HUD Enemy chỉ để ĐỔI mục tiêu khi muốn tập trung hoả lực.
+    Unit SelectedEnemyOrFirstAlive()
+    {
+        if (targetEnemyIndex >= 0 && targetEnemyIndex < enemies.Count && !enemies[targetEnemyIndex].IsDead)
+            return enemies[targetEnemyIndex];
+
+        for (int i = 0; i < enemies.Count; i++)
+        {
+            if (!enemies[i].IsDead) { targetEnemyIndex = i; return enemies[i]; }
+        }
+        return null;
+    }
+
     Skill ChooseEnemySkill(Unit enemyUnit)
     {
         var skills = enemyUnit.stats.skills;
         if (skills == null || skills.Length == 0) return BasicStrike;
+
+        // Zero (Final Boss, 4 skill: Strike/Fracture/Paralyze/Unravel) đổi hành vi theo % HP còn lại
+        // thay vì AI 2-skill đơn giản dùng chung cho các Boss chặng thường.
+        if (skills.Length >= 4) return ChooseZeroSkill(enemyUnit, skills);
+
         if (skills.Length > 1 && enemyUnit.currentAP >= skills[1].apCost) return skills[1];
         return skills[0];
+    }
+
+    // Phase 1 (>66% HP): chỉ Strike, cho người chơi làm quen arena.
+    // Phase 2 (33-66% HP): luân phiên Fracture (gắn Vulnerable) / Paralyze (gắn Stunned) lên party —
+    // quay ngược đúng 2 loại Tag mà bộ kỹ năng của party đang dùng.
+    // Phase 3 (<33% HP): ưu tiên Unravel — ăn theo Vulnerable nó vừa gắn ở Phase 2, tự chơi luật combo-Tag
+    // giống hệt party. Bark 1 dòng log khi vừa đổi phase.
+    Skill ChooseZeroSkill(Unit zero, Skill[] skills)
+    {
+        var strike = skills[0];
+        var fracture = skills[1];
+        var paralyze = skills[2];
+        var unravel = skills[3];
+
+        int maxHp = MaxHPOf(zero);
+        float hpRatio = maxHp > 0 ? (float)zero.currentHP / maxHp : 0f;
+        int phase = hpRatio > 0.66f ? 1 : hpRatio > 0.33f ? 2 : 3;
+
+        if (phase != zero.lastAnnouncedPhase && phase > 1)
+        {
+            zero.lastAnnouncedPhase = phase;
+            logText.text = phase == 2 ? "Zero: -- IT STIRS --" : "Zero: -- IT UNRAVELS --";
+        }
+
+        if (phase == 1) return strike;
+
+        var alternate = (zero.actionCount % 2 == 0) ? fracture : paralyze;
+
+        if (phase == 3 && zero.currentAP >= unravel.apCost) return unravel;
+
+        return zero.currentAP >= alternate.apCost ? alternate : strike;
     }
 
     Unit ChooseEnemyTarget(Skill skill, List<Unit> aliveParty)
@@ -261,10 +400,47 @@ public class CombatManager : MonoBehaviour
         attacker.animator.SetTrigger("Attack");
         yield return new WaitForSeconds(0.35f);
 
-        attacker.currentAP = Mathf.Max(0, attacker.currentAP - skill.apCost);
+        attacker.actionCount++;
 
-        int dmg = Mathf.Max(1, Mathf.RoundToInt(attacker.stats.attackPower * skill.powerMultiplier) + Random.Range(-2, 3));
-        bool combo = skill.consumesTag != TagType.None && target.tag == skill.consumesTag;
+        // Passive James — Contractor's Discount: tiêu thụ ngay đòn này, giảm AP cần trả.
+        int apCost = Mathf.Max(0, skill.apCost - attacker.nextSkillApDiscount);
+        attacker.nextSkillApDiscount = 0;
+        attacker.currentAP = Mathf.Max(0, attacker.currentAP - apCost);
+
+        // Combo đánh thường: dùng liên tiếp (không xen skill khác) 3 lần thì đòn thứ 3 mạnh hơn.
+        bool streakBonus = false;
+        if (skill.isComboStrike)
+        {
+            attacker.comboStrikeStreak++;
+            if (attacker.comboStrikeStreak >= 3)
+            {
+                streakBonus = true;
+                attacker.comboStrikeStreak = 0;
+            }
+        }
+        else
+        {
+            attacker.comboStrikeStreak = 0;
+        }
+
+        int dmg = Mathf.Max(1, Mathf.RoundToInt(attacker.stats.attackPower * skill.powerMultiplier * attacker.atkMultiplier) + Random.Range(-2, 3));
+        if (streakBonus) dmg = Mathf.RoundToInt(dmg * 1.5f);
+
+        // Passive Violet — Marked Prey: +30% dmg lên mục tiêu đang mang BẤT KỲ Tag nào (không chỉ Tag
+        // đúng loại cô ăn theo) — khác combo thường vì không tiêu thụ Tag, chỉ cộng thêm sát thương.
+        if (attacker.stats.hasMarkedPreyPassive && target.tag != TagType.None)
+            dmg = Mathf.RoundToInt(dmg * 1.3f);
+
+        // Passive Sally — Arcane Charge: đủ 3 charge thì đòn ăn-Vulnerable tự combo dù địch chưa mang Tag.
+        bool passiveArcaneTrigger = false;
+        if (!(skill.consumesTag != TagType.None && target.tag == skill.consumesTag)
+            && skill.consumesTag == TagType.Vulnerable && attacker.stats.hasArcaneChargePassive && attacker.arcaneCharge >= 3)
+        {
+            passiveArcaneTrigger = true;
+            attacker.arcaneCharge = 0;
+        }
+
+        bool combo = (skill.consumesTag != TagType.None && target.tag == skill.consumesTag) || passiveArcaneTrigger;
         if (combo)
         {
             dmg = Mathf.RoundToInt(dmg * skill.comboMultiplier);
@@ -273,29 +449,76 @@ public class CombatManager : MonoBehaviour
         }
         target.currentHP = Mathf.Max(0, target.currentHP - dmg);
 
+        // Passive James — Contractor's Discount: Execute (skill ăn Tag) kết liễu mục tiêu -> đòn kế tiếp giảm 1 AP.
+        if (attacker.stats.hasContractorDiscountPassive && combo && target.IsDead)
+            attacker.nextSkillApDiscount = 1;
+
         if (skill.appliesTag != TagType.None && !target.IsDead)
         {
             target.tag = skill.appliesTag;
             target.tagTurns = skill.tagDuration;
+
+            // Passive Sally — mỗi lần ĐỒNG ĐỘI KHÁC gắn Vulnerable lên địch, Sally tích 1 charge.
+            if (skill.appliesTag == TagType.Vulnerable)
+            {
+                foreach (var p in party)
+                    if (p != attacker && p.stats.hasArcaneChargePassive)
+                        p.arcaneCharge++;
+            }
         }
+
+        // Passive: mỗi 5 đòn trúng (bất kỳ skill) hồi 5% HP tối đa.
+        string healNote = "";
+        if (attacker.stats.hasComboHealPassive)
+        {
+            attacker.totalHitsLanded++;
+            if (attacker.totalHitsLanded % 5 == 0)
+            {
+                int healAmount = Mathf.Max(1, Mathf.RoundToInt(attacker.stats.maxHP * 0.05f));
+                attacker.currentHP = Mathf.Min(attacker.stats.maxHP, attacker.currentHP + healAmount);
+                healNote = $"  {attacker.stats.unitName} hồi {healAmount} HP!";
+            }
+        }
+        if (passiveArcaneTrigger) healNote += "  Arcane Charge fires!";
+        if (attacker.stats.hasContractorDiscountPassive && combo && target.IsDead) healNote += "  Contractor's Discount!";
 
         if (cameraShake != null) cameraShake.Shake();
         if (sfxSource != null && hitSfx != null) sfxSource.PlayOneShot(hitSfx);
 
-        string comboNote = combo ? "  COMBO!" : "";
+        bool isUltimate = skill.skillName == "Shattered Gate";
+        bool bigHit = streakBonus || combo || target.IsDead;
+        Sprite[] fxFrames = ChooseFxFrames(attacker, skill, isUltimate, bigHit);
+        float fxScale = isUltimate ? 4f : bigHit ? 2.5f : 1.5f;
+        if (target.go != null) HitEffect.Spawn(fxFrames, target.go.transform.position, fxScale);
+
+        string comboNote = streakBonus ? "  COMBO x3!" : (combo ? "  COMBO!" : "");
         if (target.IsDead)
         {
             target.animator.SetTrigger("Dead");
-            logText.text = $"{attacker.stats.unitName} uses {skill.skillName} on {target.stats.unitName}: -{dmg} dmg.{comboNote} {target.stats.unitName} is defeated!";
+            logText.text = $"{attacker.stats.unitName} uses {skill.skillName} on {target.stats.unitName}: -{dmg} dmg.{comboNote} {target.stats.unitName} is defeated!{healNote}";
         }
         else
         {
             target.animator.SetTrigger("Hurt");
-            logText.text = $"{attacker.stats.unitName} uses {skill.skillName}: -{dmg} dmg.{comboNote} ({target.currentHP}/{target.stats.maxHP} HP)";
+            logText.text = $"{attacker.stats.unitName} uses {skill.skillName}: -{dmg} dmg.{comboNote} ({target.currentHP}/{MaxHPOf(target)} HP){healNote}";
         }
 
         UpdateStatusUI();
         yield return new WaitForSeconds(0.35f);
+    }
+
+    // Ultimate > đòn to/combo/kết liễu (theo phe) > gắn Tag (flavor riêng) > đòn thường (theo phe).
+    Sprite[] ChooseFxFrames(Unit attacker, Skill skill, bool isUltimate, bool bigHit)
+    {
+        if (isUltimate) return ultimateFxFrames;
+
+        bool isHero = party.Contains(attacker);
+        if (bigHit) return isHero ? bigHitFxFrames : enemyBigHitFxFrames;
+
+        if (skill.appliesTag == TagType.Stunned) return stunApplyFx;
+        if (skill.appliesTag == TagType.Vulnerable) return isHero ? vulnerableApplyFx : enemyVulnerableApplyFx;
+
+        return isHero ? hitFxFrames : enemyHitFxFrames;
     }
 
     void UpdateSkillButtons(Unit unit)
@@ -306,10 +529,12 @@ public class CombatManager : MonoBehaviour
             if (i < skills.Length)
             {
                 var skill = skills[i];
+                // Passive James — Contractor's Discount: đòn kế tiếp giảm AP, phản ánh luôn lên nút/label.
+                int effectiveCost = Mathf.Max(0, skill.apCost - unit.nextSkillApDiscount);
                 skillButtons[i].gameObject.SetActive(true);
-                skillButtons[i].interactable = unit.currentAP >= skill.apCost;
+                skillButtons[i].interactable = unit.currentAP >= effectiveCost;
                 var label = skillButtons[i].GetComponentInChildren<Text>();
-                label.text = skill.apCost > 0 ? $"{skill.skillName}\n({skill.apCost} AP)" : skill.skillName;
+                label.text = effectiveCost > 0 ? $"{skill.skillName}\n({effectiveCost} AP)" : skill.skillName;
                 skillButtons[i].onClick.RemoveAllListeners();
                 var captured = skill;
                 skillButtons[i].onClick.AddListener(() => { chosenSkill = captured; waitingForPlayerInput = false; });
@@ -344,12 +569,12 @@ public class CombatManager : MonoBehaviour
     bool CheckEnd()
     {
         if (hasEnded) return true;
-        if (enemy == null) return false;
+        if (enemies.Count == 0) return false;
 
-        if (enemy.IsDead)
+        if (enemies.All(e => e.IsDead))
         {
             hasEnded = true;
-            logText.text = $"Victory! {enemy.stats.unitName} has been defeated.";
+            logText.text = enemies.Count > 1 ? "Victory! All enemies have been defeated." : $"Victory! {enemies[0].stats.unitName} has been defeated.";
             if (sfxSource != null && victorySfx != null) sfxSource.PlayOneShot(victorySfx);
             StartCoroutine(EndAfterDelay(true));
             return true;
@@ -398,16 +623,29 @@ public class CombatManager : MonoBehaviour
             }
         }
 
-        if (enemy != null)
+        for (int i = 0; i < enemyHpFill.Length; i++)
         {
-            enemyNameText.text = $"{enemy.stats.unitName}  {enemy.currentHP}/{enemy.stats.maxHP}";
-            enemyHpFill.fillAmount = enemy.stats.maxHP > 0 ? (float)enemy.currentHP / enemy.stats.maxHP : 0f;
-            enemyHpFill.color = HpColor(enemyHpFill.fillAmount);
-            if (enemyTagText != null)
+            var slotRoot = enemyHpFill[i].transform.parent.gameObject;
+            bool active = i < enemies.Count;
+            if (slotRoot.activeSelf != active) slotRoot.SetActive(active);
+            if (!active)
             {
-                enemyTagText.text = TagLabel(enemy);
-                enemyTagText.color = TagColor(enemy.tag);
+                if (i < enemyTagText.Length) enemyTagText[i].text = "";
+                continue;
             }
+
+            var e = enemies[i];
+            int eMax = MaxHPOf(e);
+            enemyNameText[i].text = $"{e.stats.unitName}  {e.currentHP}/{eMax}";
+            enemyHpFill[i].fillAmount = eMax > 0 ? (float)e.currentHP / eMax : 0f;
+            enemyHpFill[i].color = e.IsDead ? new Color(0.3f, 0.3f, 0.3f) : HpColor(enemyHpFill[i].fillAmount);
+            if (i < enemyTagText.Length)
+            {
+                enemyTagText[i].text = TagLabel(e);
+                enemyTagText[i].color = TagColor(e.tag);
+            }
+            if (enemyTargetButtons != null && i < enemyTargetButtons.Length && enemyTargetButtons[i] != null)
+                enemyTargetButtons[i].interactable = !e.IsDead;
         }
     }
 
@@ -432,14 +670,4 @@ public class CombatManager : MonoBehaviour
         _ => Color.white
     };
 
-    void UpdateTurnOrderUI(int fromIndex)
-    {
-        var names = new List<string>();
-        for (int i = 0; i < turnQueue.Count * 2 && names.Count < 5; i++)
-        {
-            var u = turnQueue[(fromIndex + i) % turnQueue.Count];
-            if (!u.IsDead) names.Add(u.stats.unitName);
-        }
-        turnOrderText.text = "Turn order: " + string.Join(" → ", names);
-    }
 }

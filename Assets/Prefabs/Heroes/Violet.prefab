@@ -137,6 +137,7 @@ MonoBehaviour:
     tagDuration: 2
     consumesTag: 0
     comboMultiplier: 1.75
+    isComboStrike: 0
   - skillName: Pin Down
     apCost: 2
     powerMultiplier: 0.6
@@ -144,4 +145,10 @@ MonoBehaviour:
     tagDuration: 1
     consumesTag: 0
     comboMultiplier: 1.75
+    isComboStrike: 0
   battlegroundIndex: 0
+  displayScale: 1
+  hasComboHealPassive: 0
+  hasArcaneChargePassive: 0
+  hasMarkedPreyPassive: 1
+  hasContractorDiscountPassive: 0

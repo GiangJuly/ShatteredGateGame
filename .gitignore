@@ -26,6 +26,11 @@
 *.unitypackage
 *.app
 
+# File zip gói asset gốc tải về — nội dung đã giải nén và track riêng từng file rồi,
+# giữ nguyên zip trong git chỉ tốn dung lượng vô ích (từng làm push bị GitHub từ chối
+# vì 1 file vượt giới hạn 100MB).
+*.zip
+
 crashlytics-build.properties
 .vs/
 .gradle/

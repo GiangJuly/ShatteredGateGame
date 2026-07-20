@@ -124,8 +124,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   unitName: Zero
-  maxHP: 100
-  attackPower: 16
+  maxHP: 130
+  attackPower: 18
   speed: 9
   isPlayerUnit: 0
   maxAP: 3
@@ -137,11 +137,34 @@ MonoBehaviour:
     tagDuration: 2
     consumesTag: 0
     comboMultiplier: 1.75
-  - skillName: Crushing Blow
+    isComboStrike: 0
+  - skillName: Fracture
     apCost: 2
-    powerMultiplier: 0.8
+    powerMultiplier: 0.7
     appliesTag: 1
     tagDuration: 2
     consumesTag: 0
     comboMultiplier: 1.75
-  battlegroundIndex: 3
+    isComboStrike: 0
+  - skillName: Paralyze
+    apCost: 2
+    powerMultiplier: 0.6
+    appliesTag: 2
+    tagDuration: 1
+    consumesTag: 0
+    comboMultiplier: 1.75
+    isComboStrike: 0
+  - skillName: Unravel
+    apCost: 3
+    powerMultiplier: 1.6
+    appliesTag: 0
+    tagDuration: 2
+    consumesTag: 1
+    comboMultiplier: 1.8
+    isComboStrike: 0
+  battlegroundIndex: 4
+  displayScale: 1.05
+  hasComboHealPassive: 0
+  hasArcaneChargePassive: 0
+  hasMarkedPreyPassive: 0
+  hasContractorDiscountPassive: 0
