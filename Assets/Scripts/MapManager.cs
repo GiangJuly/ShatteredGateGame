@@ -111,4 +111,15 @@ public class MapManager : MonoBehaviour
         currentStage++;
         ShowStage();
     }
+
+    // Phím tắt 1/2/3 chọn cổng tương ứng. Vô hiệu khi đang Pause để không xuyên qua PausePanel.
+    void Update()
+    {
+        if (Time.timeScale == 0f) return;
+        for (int i = 0; i < gateButtons.Length; i++)
+        {
+            if (gateButtons[i].gameObject.activeInHierarchy && gateButtons[i].interactable && Input.GetKeyDown(KeyCode.Alpha1 + i))
+                gateButtons[i].onClick.Invoke();
+        }
+    }
 }

@@ -7,6 +7,7 @@ using UnityEditor.SceneManagement;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 /// Dựng toàn bộ scene "Main" (Menu -> Map 5+1 chặng -> Combat -> KeyGate -> End) bằng code.
 /// Yêu cầu đã chạy "Setup Hero Prefabs" và các Tier A/B/C/D trước đó.
@@ -103,6 +104,22 @@ public static class SceneBuilder
         // ---- World-space dungeon Tilemap (nhiều biến thể sàn/tường thật, không lặp 1 tile) ----
         BuildDungeonTilemap();
 
+        // ---- Combat background (world-space, đổi theo tier quái) ----
+        // Đặt Z=3: giữa nhân vật (Z=0, gần camera hơn nên vẽ đè lên) và DungeonGrid (Z=5, xa nhất).
+        var combatBgGo = new GameObject("CombatBackground");
+        combatBgGo.transform.position = new Vector3(0, 0, 3f);
+        var combatBgRenderer = combatBgGo.AddComponent<SpriteRenderer>();
+        combatBgRenderer.sortingOrder = -1;
+
+        var battlegroundSprites = new[]
+        {
+            LoadSprite("Assets/Pixel-Art-Battlegrounds/PNG/Battleground1/Bright/Battleground1.png"),
+            LoadSprite("Assets/Pixel-Art-Battlegrounds/PNG/Battleground2/Bright/Battleground2.png"),
+            LoadSprite("Assets/Pixel-Art-Battlegrounds/PNG/Battleground3/Bright/Battleground3.png"),
+            LoadSprite("Assets/Pixel-Art-Battlegrounds/PNG/Battleground4/Bright/Battleground4.png"),
+        };
+        combatBgRenderer.sprite = battlegroundSprites[0];
+
         // ---- EventSystem ----
         var esGo = new GameObject("EventSystem");
         esGo.AddComponent<EventSystem>();
@@ -148,8 +165,46 @@ public static class SceneBuilder
             new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 40), new Vector2(700, 40));
         subtitleText.color = new Color(0.7f, 0.7f, 0.75f);
 
-        var startBtn = CreateButton(menuPanel.transform, "StartButton", "Start",
-            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -60), new Vector2(240, 64));
+        var startBtn = CreateButton(menuPanel.transform, "StartButton", "Start Game",
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -60), new Vector2(220, 46));
+
+        // Continue/Options: chưa có hệ thống save/settings đứng sau — hiện nút nhưng khoá lại
+        // thay vì giả vờ hoạt động, để bố cục đủ 5 nút như bản mẫu mà không có UI "chết".
+        var continueBtn = CreateButton(menuPanel.transform, "ContinueButton", "Continue",
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -114), new Vector2(220, 46));
+        continueBtn.interactable = false;
+
+        var optionsBtn = CreateButton(menuPanel.transform, "OptionsButton", "Options",
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -168), new Vector2(220, 46));
+        optionsBtn.interactable = false;
+
+        var creditsBtn = CreateButton(menuPanel.transform, "CreditsButton", "Credits",
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -222), new Vector2(220, 46));
+
+        var quitBtn = CreateButton(menuPanel.transform, "QuitButton", "Exit Game",
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -276), new Vector2(220, 46));
+
+        // ---- Credits Panel ----
+        var creditsPanel = CreateUIObject("CreditsPanel", canvasGo.transform);
+        StretchFull(creditsPanel.GetComponent<RectTransform>());
+        creditsPanel.AddComponent<Image>().color = new Color(0.03f, 0.02f, 0.05f, 1f);
+
+        var creditsTitle = CreateText(creditsPanel.transform, "CreditsTitle", "CREDITS", 30, TextAnchor.MiddleCenter,
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 200), new Vector2(700, 50));
+        creditsTitle.color = GoldColor;
+
+        var creditsBody = CreateText(creditsPanel.transform,
+            "CreditsBody",
+            "DungeonTileset II — 0x72 (CC0)\n" +
+            "Pixel-Art Battlegrounds — CraftPix.net (Free License)\n" +
+            "RPG Sound Pack — artisticdude (CC0)\n" +
+            "Short Music Jingles — Kenney.nl (CC0)\n" +
+            "Fantasy-UI, Portal VFX — xem license kèm theo trong Assets/",
+            17, TextAnchor.MiddleCenter,
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 40), new Vector2(760, 220));
+
+        var creditsBackBtn = CreateButton(creditsPanel.transform, "CreditsBackButton", "Back",
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -160), new Vector2(200, 50));
 
         // ---- Map Panel (5+1 chặng, cổng dạng thoi) ----
         var mapPanel = CreateUIObject("MapPanel", canvasGo.transform);
@@ -195,6 +250,7 @@ public static class SceneBuilder
         // ---- Combat Panel ----
         var combatPanel = CreateUIObject("CombatPanel", canvasGo.transform);
         StretchFull(combatPanel.GetComponent<RectTransform>());
+        // CombatPanel không có Image nền riêng — panel trong suốt để lộ world phía sau (background world-space + nhân vật).
 
         var turnOrderText = CreateText(combatPanel.transform, "TurnOrderText", "Turn order: ", 22, TextAnchor.UpperCenter,
             new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -30), new Vector2(900, 40));
@@ -202,23 +258,34 @@ public static class SceneBuilder
         var partyNameTexts = new Text[4];
         var partyHpFills = new Image[4];
         var partyPortraits = new Image[4];
+        var partyTagTexts = new Text[4];
         for (int i = 0; i < 4; i++)
         {
-            var (fill, label, portrait) = CreateHealthBarSlot(combatPanel.transform, $"PartyHUD{i}",
+            var (fill, label, portrait, tagText) = CreateHealthBarSlot(combatPanel.transform, $"PartyHUD{i}",
                 new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(160, 40 + i * 46), new Vector2(220, 38));
             partyHpFills[i] = fill;
             partyNameTexts[i] = label;
             partyPortraits[i] = portrait;
+            partyTagTexts[i] = tagText;
         }
 
-        var (enemyFill, enemyLabel, enemyPortraitImg) = CreateHealthBarSlot(combatPanel.transform, "EnemyHUD",
+        var (enemyFill, enemyLabel, enemyPortraitImg, enemyTagTextObj) = CreateHealthBarSlot(combatPanel.transform, "EnemyHUD",
             new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-170, 220), new Vector2(260, 38));
 
         var logText = CreateText(combatPanel.transform, "LogText", "", 20, TextAnchor.MiddleCenter,
-            new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 95), new Vector2(900, 50));
+            new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 118), new Vector2(900, 50));
 
-        var attackBtn = CreateButton(combatPanel.transform, "AttackButton", "Attack!",
-            new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 35), new Vector2(200, 56));
+        var apText = CreateText(combatPanel.transform, "APText", "", 18, TextAnchor.MiddleCenter,
+            new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 72), new Vector2(300, 20));
+        apText.color = GoldColor;
+
+        var skillButtons = new Button[3];
+        float[] skillX = { -220f, 0f, 220f };
+        for (int i = 0; i < 3; i++)
+        {
+            skillButtons[i] = CreateButton(combatPanel.transform, $"SkillButton{i}", "Skill",
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(skillX[i], 35), new Vector2(200, 56));
+        }
 
         // ---- Key Gate Panel ----
         var keyGatePanel = CreateUIObject("KeyGatePanel", canvasGo.transform);
@@ -247,6 +314,64 @@ public static class SceneBuilder
 
         var restartBtn = CreateButton(endPanel.transform, "RestartButton", "Back to Menu",
             new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -80), new Vector2(240, 60));
+
+        // ---- Pause Panel (overlay modal, KHÔNG nằm trong ShowOnly — tự bật/tắt riêng qua Esc) ----
+        var pausePanel = CreateUIObject("PausePanel", canvasGo.transform);
+        StretchFull(pausePanel.GetComponent<RectTransform>());
+        pausePanel.AddComponent<Image>().color = new Color(0.02f, 0.015f, 0.03f, 0.82f);
+        pausePanel.SetActive(false);
+
+        var pauseTitle = CreateText(pausePanel.transform, "PauseTitle", "PAUSED", 34, TextAnchor.MiddleCenter,
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 140), new Vector2(500, 50));
+        pauseTitle.color = GoldColor;
+        pauseTitle.fontStyle = FontStyle.Bold;
+
+        var resumeBtn = CreateButton(pausePanel.transform, "ResumeButton", "Resume",
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 60), new Vector2(220, 50));
+
+        var pauseSettingsBtn = CreateButton(pausePanel.transform, "PauseSettingsButton", "Settings",
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 0), new Vector2(220, 50));
+        pauseSettingsBtn.interactable = false;
+
+        var pauseQuitBtn = CreateButton(pausePanel.transform, "PauseQuitButton", "Quit to Menu",
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -60), new Vector2(220, 50));
+
+        // ---- Transition Overlay (hiệu ứng "xuyên Cổng Không Gian" khi đổi panel) ----
+        // Tạo sau cùng dưới Canvas để luôn render đè lên mọi panel khác.
+        var transitionRoot = CreateUIObject("TransitionOverlay", canvasGo.transform);
+        StretchFull(transitionRoot.GetComponent<RectTransform>());
+        var fadeImg = transitionRoot.AddComponent<Image>();
+        fadeImg.color = new Color(0f, 0f, 0f, 0f);
+
+        var portalFrames = AssetDatabase.LoadAllAssetsAtPath("Assets/Art/VFX/Portal/sprite-sheet.png")
+            .OfType<Sprite>()
+            .Select(s => new { sprite = s, index = ParseTrailingIndex(s.name) })
+            .Where(x => x.index >= 0)
+            .OrderBy(x => x.index)
+            .Select(x => x.sprite)
+            .ToArray();
+        if (portalFrames.Length == 0)
+            Debug.LogWarning("[SceneBuilder] Không tìm thấy frame Portal (sprite-sheet.png chưa cắt Sprite Editor?) — hiệu ứng chuyển cảnh sẽ chỉ có fade đen.");
+
+        var portalGo = CreateUIObject("PortalImage", transitionRoot.transform);
+        var portalRt = portalGo.GetComponent<RectTransform>();
+        portalRt.anchorMin = new Vector2(0.5f, 0.5f);
+        portalRt.anchorMax = new Vector2(0.5f, 0.5f);
+        portalRt.anchoredPosition = Vector2.zero;
+        portalRt.sizeDelta = new Vector2(150, 150);
+        var portalImg = portalGo.AddComponent<Image>();
+        portalImg.preserveAspect = true;
+        portalImg.raycastTarget = false;
+        portalImg.color = new Color(1f, 1f, 1f, 0f);
+        if (portalFrames.Length > 0) portalImg.sprite = portalFrames[0];
+
+        transitionRoot.SetActive(false);
+
+        var transition = canvasGo.AddComponent<SceneTransition>();
+        transition.overlayRoot = transitionRoot;
+        transition.fadeImage = fadeImg;
+        transition.portalImage = portalImg;
+        transition.portalFrames = portalFrames;
 
         // ---- Spawn points (world space) ----
         var spawnRoot = new GameObject("SpawnPoints");
@@ -312,11 +437,16 @@ public static class SceneBuilder
         combatMgr.enemyNameText = enemyLabel;
         combatMgr.enemyHpFill = enemyFill;
         combatMgr.logText = logText;
-        combatMgr.attackButton = attackBtn;
+        combatMgr.apText = apText;
+        combatMgr.skillButtons = skillButtons;
+        combatMgr.backgroundRenderer = combatBgRenderer;
+        combatMgr.battlegroundSprites = battlegroundSprites;
         combatMgr.cameraShake = shake;
         combatMgr.sfxSource = sfxSource;
         combatMgr.partyPortrait = partyPortraits;
+        combatMgr.partyTagText = partyTagTexts;
         combatMgr.enemyPortrait = enemyPortraitImg;
+        combatMgr.enemyTagText = enemyTagTextObj;
         combatMgr.portraitLookup = new[]
         {
             new CombatManager.NamedSprite{ unitName = "Graham", sprite = grahamPortrait },
@@ -344,13 +474,22 @@ public static class SceneBuilder
         flow.combatPanel = combatPanel;
         flow.keyGatePanel = keyGatePanel;
         flow.endPanel = endPanel;
+        flow.creditsPanel = creditsPanel;
+        flow.pausePanel = pausePanel;
         flow.startButton = startBtn;
+        flow.creditsButton = creditsBtn;
+        flow.creditsBackButton = creditsBackBtn;
+        flow.quitButton = quitBtn;
         flow.restartButton = restartBtn;
+        flow.resumeButton = resumeBtn;
+        flow.pauseSettingsButton = pauseSettingsBtn;
+        flow.pauseQuitButton = pauseQuitBtn;
         flow.keyGateContinueButton = keyContinueBtn;
         flow.keyGateLoreText = keyLoreText;
         flow.endTitleText = endTitle;
         flow.mapManager = mapMgr;
         flow.combatManager = combatMgr;
+        flow.transition = transition;
         flow.mainHeroPrefab = graham;
         flow.recruitOrder = new[] { sally, violet, james };
         flow.recruitLoreLines = new[]
@@ -368,6 +507,15 @@ public static class SceneBuilder
         if (!scenesList.Any(s => s.path == scenePath))
             scenesList.Add(new EditorBuildSettingsScene(scenePath, true));
         EditorBuildSettings.scenes = scenesList.ToArray();
+
+        // Scene toàn bộ là 2D phẳng (mọi sprite/UI nằm trên các mặt phẳng Z khác nhau) — Scene view mặc định
+        // là camera 3D góc nghiêng nên sẽ thấy các mặt phẳng đó dí cạnh, trông như bị "cắt lát". Ép về chế độ
+        // 2D (nhìn thẳng góc, orthographic) mỗi lần build lại để luôn xem được đúng ngay khi mở scene.
+        if (SceneView.lastActiveSceneView != null)
+        {
+            SceneView.lastActiveSceneView.in2DMode = true;
+            SceneView.lastActiveSceneView.Frame(new Bounds(new Vector3(0, 0, 0), new Vector3(20, 12, 1)), false);
+        }
 
         Debug.Log("[SceneBuilder] Xong! Scene 'Main' (5+1 chặng, tuyển mộ đầy đủ) tại " + scenePath + " — mở lên và bấm Play để test.");
     }
@@ -460,6 +608,12 @@ public static class SceneBuilder
         AssetDatabase.SaveAssets();
     }
 
+    static int ParseTrailingIndex(string spriteName)
+    {
+        var m = Regex.Match(spriteName, @"_(\d+)$");
+        return m.Success ? int.Parse(m.Groups[1].Value) : -1;
+    }
+
     static GameObject CreateUIObject(string name, Transform parent)
     {
         var go = new GameObject(name, typeof(RectTransform));
@@ -500,7 +654,7 @@ public static class SceneBuilder
         return txt;
     }
 
-    static (Image fill, Text label, Image portrait) CreateHealthBarSlot(Transform parent, string name,
+    static (Image fill, Text label, Image portrait, Text tagText) CreateHealthBarSlot(Transform parent, string name,
         Vector2 anchorMin, Vector2 anchorMax, Vector2 anchoredPos, Vector2 sizeDelta)
     {
         var container = CreateUIObject(name, parent);
@@ -557,7 +711,24 @@ public static class SceneBuilder
         labelOutline.effectColor = new Color(0, 0, 0, 0.85f);
         labelOutline.effectDistance = new Vector2(1f, -1f);
 
-        return (fillImg, labelTxt, portraitImg);
+        // Nhãn Tag (Vulnerable/Stunned) nổi phía trên thanh máu
+        var tagGo = CreateUIObject("TagText", container.transform);
+        var tagRt = tagGo.GetComponent<RectTransform>();
+        tagRt.anchorMin = new Vector2(0.5f, 1f);
+        tagRt.anchorMax = new Vector2(0.5f, 1f);
+        tagRt.anchoredPosition = new Vector2(0, 13);
+        tagRt.sizeDelta = new Vector2(sizeDelta.x, 18);
+        var tagTxt = tagGo.AddComponent<Text>();
+        tagTxt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        tagTxt.alignment = TextAnchor.MiddleCenter;
+        tagTxt.fontSize = 13;
+        tagTxt.fontStyle = FontStyle.Bold;
+        tagTxt.color = Color.white;
+        var tagOutline = tagGo.AddComponent<Outline>();
+        tagOutline.effectColor = new Color(0, 0, 0, 0.85f);
+        tagOutline.effectDistance = new Vector2(1f, -1f);
+
+        return (fillImg, labelTxt, portraitImg, tagTxt);
     }
 
     static (Button btn, Image diamond, Text label, Image icon) CreateGateDiamond(Transform parent, Vector2 anchoredPos)

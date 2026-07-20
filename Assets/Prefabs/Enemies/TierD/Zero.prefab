@@ -128,3 +128,20 @@ MonoBehaviour:
   attackPower: 16
   speed: 9
   isPlayerUnit: 0
+  maxAP: 3
+  skills:
+  - skillName: Strike
+    apCost: 0
+    powerMultiplier: 1
+    appliesTag: 0
+    tagDuration: 2
+    consumesTag: 0
+    comboMultiplier: 1.75
+  - skillName: Crushing Blow
+    apCost: 2
+    powerMultiplier: 0.8
+    appliesTag: 1
+    tagDuration: 2
+    consumesTag: 0
+    comboMultiplier: 1.75
+  battlegroundIndex: 3
